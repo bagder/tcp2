@@ -137,6 +137,7 @@ void app_network_on_udp_read(struct app_context *app_context,
    *              this field, which is a design discussion in itself:
    *              - Always return the time until the next scheduled event or
    *                {0, 0} of no events are pending
+   *              OR
    *              - Return the time until the next scheduled event ONLY if the
    *                first event on the list was changed.  This works on the
    *                assumption that the application has already scheduled a
@@ -163,7 +164,7 @@ void app_network_on_udp_read(struct app_context *app_context,
    * This activity is non blocking, the tcp2 library should not perform any
    * socket I/O and ideally shouldn't perform any block device I/O either, nor
    * should it call any system calls that could be prone to delay in the
-   * kerel. All outputs relevant to the application will be placed in the
+   * kernel. All outputs relevant to the application will be placed in the
    * tcp2_events *_out members.
    *
    * ----BEGIN DISCUSSION----
@@ -200,20 +201,20 @@ void app_network_on_udp_read(struct app_context *app_context,
   /*
    * buffer_out is now property of the app's network layer
    */
-    events.buffer_out = NULL;
+    tcp2_events.buffer_out = NULL;
   }
 
   /*
    * Clean up the events structure.
    */
-  events.buffer_in = NULL;
+  tcp2_events.buffer_in = NULL;
 
-  if (events.buffer_out != NULL) {
-    tcp2_destroy_buffer(events.buffer_out);
-    events.buffer_out = NULL;
+  if (tcp2_events.buffer_out != NULL) {
+    tcp2_destroy_buffer(tcp2_events.buffer_out);
+    tcp2_events.buffer_out = NULL;
   }
 
-  events.timeout_out = {0, 0};
+  tcp2_events.timeout_out = {0, 0};
 
   /*
    * Prepare for more udp packet reads from the network layer
@@ -260,23 +261,23 @@ void app_timer_on_timeout(struct app_context *app_context) {
    * from the buffer object but only in this case study.  Other case studies
    * will explore how addressing will be handled.
    */
-  if (!tcp2_buffer_empty(events.out_buffer)) {
-    app_network_write_udp(app_context, events.buffer_out);
+  if (!tcp2_buffer_empty(tcp2_events.out_buffer)) {
+    app_network_write_udp(app_context, tcp2_events.buffer_out);
   /*
    * buffer_out is now property of the app's network layer
    */
-    events.buffer_out = NULL;
+    tcp2_events.buffer_out = NULL;
   }
 
   /*
    * Clean up the events structure.
    */
-  events.buffer_in = NULL;
+  tcp2_events.buffer_in = NULL;
 
-  if (events.buffer_out != NULL) {
-    tcp2_destroy_buffer(events.buffer_out);
-    events.buffer_out = NULL;
+  if (tcp2_events.buffer_out != NULL) {
+    tcp2_destroy_buffer(tcp2_events.buffer_out);
+    tcp2_events.buffer_out = NULL;
   }
 
-  events.timeout_out = {0, 0};
+  tcp2_events.timeout_out = {0, 0};
 }
