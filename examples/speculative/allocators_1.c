@@ -188,25 +188,25 @@ struct tcp2_allocator_operations {
 void *tcp2_allocator_alloc(const struct tcp2_allocator *allocator,
                            uint64_t type, size_t size) {
   return allocator->operations->alloc(allocator, type, size);
-  }
+}
 
 void tcp2_allocator_free(const struct tcp2_allocator *allocator,
                          uint64_t type, size_t size, void *obj) {
   allocator->operations->free(allocator, type, size, obj);
-  }
+}
+
+
+
 
 
 
 /*
- * A simple allocator implementation that simply uses system malloc and and
+ * A trivial allocator implementation that simply uses system malloc and and
  * free.
  */
 
-
-
 /*
- * NOTE: the following functions and objects are static and hidden in 
- * a '.c' file
+ * The definitions of the trivial alloc and free functions.
  */
 static void *tcp2_trivial_alloc(const struct tcp2_allocator *allocator,
                                 uint64_t type, size_t size) {
@@ -218,7 +218,7 @@ static void *tcp2_trivial_alloc(const struct tcp2_allocator *allocator,
     memset(obj, 0, size);
 
   return obj;
-  }
+}
 
 static void tcp2_trivial_free(const struct tcp2_allocator *allocator,
                               unt64_t type, size_t size, void *obj) {
@@ -226,19 +226,21 @@ static void tcp2_trivial_free(const struct tcp2_allocator *allocator,
     memset(obj, 0, size);
 
   free(obj);
-  }
+}
 
+
+
+/*
+ * The global operations structure to hold references to trivial alloc and free.
+ */
 static struct tcp2_allocator_operations tcp2_trivial_allocator_operations = {
-   .alloc = tcp2_trivial_alloc,
-   .free = tcp2_trivial_free,
+  .alloc = tcp2_trivial_alloc,
+  .free = tcp2_trivial_free,
 };
 
 static struct tcp2_allocator tcp2_trivial_allocator = {
   .operations = &tcp2_trivial_allocator_operations,
 };
-/*
- * END NOTE
- */
 
 
 
@@ -257,70 +259,169 @@ const struct tcp2_allocator *tcp2_get_trivial_allocator(void) {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+/*
+ * This is an example of an application modifying the trivial allocator to
+ * enact some small changes to its behaviour.
+ */
+static void *app_modified_alloc(const struct tcp2_allocator *allocator,
+                                uint64_t type, size_t size) {
+  if (type == APP_TYPE1)
+    return app_alloc_type1();
+  else
+  if (type == APP_TYPE2)
+    return app_alloc_type2();
+
+  return tcp2_trivial_alloc(allocator, type, size);
+}
+
+static void app_modified_free(const struct tcp2_allocator *allocator,
+                              unt64_t type, size_t size, void *obj) {
+  if (type == APP_TYPE1)
+    return app_free_type1();
+  else
+  if (type == APP_TYPE2)
+    return app_free_type2();
+
+  return tcp2_trivial_alloc(allocator, type, size);
+}
+
+/*
+ * The global operations structure to hold references to modified alloc and
+ * free.
+ */
+static struct tcp2_allocator_operations app_modified_allocator_operations = {
+  .alloc = app_modified_alloc,
+  .free = app_modified_free,
+};
+
+static struct tcp2_allocator app_modified_allocator = {
+  .operations = &app_modified_allocator_operations,
+};
+
+
+
+/*
+ * Get the built in modified allocator.
+ *
+ * Using this function, the allocator can be supplied as a parameter to other
+ * functions.
+ */
+const struct tcp2_allocator *app_get_modified_allocator(void) {
+  return &app_modified_allocator;
+}
+
+
+
+
+
+
+
+
+/*
+ * This is an example of a more complex allocator, although the internals of
+ * how it optimises and performs allocations will be omitted.
+ *
+ * During creation, initialisation and destruction, the custom allocator will
+ * fall back to the trivial allocator.
+ */
+struct app_custom_allocator {
+  /*
+   * Because the tcp2_allocator is the first member of the custom allocator,
+   * it's offset is zero therefore it's address is the same as it's parents'.
+   */
+  struct tcp2_allocator tcp2_allocator;
+
+  /*
+   * Magic application specific allocator data structures here:
+   */
+  struct app_custom_resource1 {
+  };
+
+  struct app_custom_resource2 {
+  };
+};
+
+static void *app_custom_allocator_alloc(
+    const struct tcp2_allocator *allocator,
+    uint64_t type, size_t size) {
+  /*
+   * Upcast the tcp2 allocator to the application specific allocator.
+   */
+  const struct app_custom_allocator *app_custom_allocator =
+    (const struct app_custom_allocator *)allocator;
+
+  /*
+   * Do magic application specific allocation using custom allocator resources.
+   */
+
+  return obj;
+}
+
+static void app_custom_allocator_free(
+    const struct tcp2_allocator *allocator,
+    uint64_t type, size_t size, void *obj) {
+  /*
+   * Upcast the tcp2 allocator to the application specific allocator.
+   */
+  const struct app_custom_allocator *app_custom_allocator =
+    (const struct app_custom_allocator *)allocator;
+
+  /*
+   * Return the memory address to the custom allocator using magic.
+   */
+}
+
+/*
+ * The global operations structure to hold references to custom alloc and
+ * free.
+ */
+static struct tcp2_allocator_operations app_custom_allocator_operations = {
+  .alloc = app_custom_alloc,
+  .free = app_custom_free,
+};
+
+
+
+/*
+ * Create a custom allocator.  Not a 'get' as this example allows multiple
+ * custom allocation contexts, for example one may be created per application
+ * thread.
+ */
+struct app_custom_allocator *app_create_custom_allocator() {
+  const struct app_custom_allocator *app_custom_allocator =
+    tcp2_allocator_alloc(tcp2_get_trivial_allocator(),
+                         0, sizeof(struct app_custom_allocator));
+  if (!app_custom_allocator) {
+    return NULL;
+  }
+
+  app_custom_allocator->tcp2_allocator.operations =
+    &app_custom_allocator_operations;
+
+  app_initialise_custom_allocator(app_custom_allocator);
+
+  return app_custom_allocator;
+}
+
+/*
+ * Custom allocator destructor.
+ */
+void app_destroy_custom_allocator(
+    struct app_custom_allocator *app_custom_allocator) {
+  app_cleanup_custom_allocator(app_custom_allocator);
+
+  tcp2_allocator_free(tcp2_get_trivial_allocator(),
+                      0, sizeof(struct app_custom_allocator),
+                      app_custom_allocator);
+}
+
+
+
+
+
+
+/*
+ * Next is a demonstration of how an allocator may be provided to tcp2 at
+ * runtime.
+ */
 
