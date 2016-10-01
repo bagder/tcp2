@@ -201,6 +201,33 @@ void tcp2_allocator_free(const struct tcp2_allocator *allocator,
 
 
 /*
+ * Modified operations.  The application author may set these functions when
+ * they wish to take responsibility for allocating non tcp2 structures or
+ * memory regions, which are those structs or memory regions with type id
+ * == 0 or > the tcp2 type limit (1048576)
+ */
+static struct tcp2_allocator_operations tcp2_trivial_allocator_app_operations = {
+  .alloc = NULL,
+  .free = NULL,
+};
+
+void tcp2_set_trivial_allocator_app_operations(
+    void *(*alloc)(const struct tcp2_allocator *allocator,
+                   uint64_t type, size_t size),
+    void   (*free)(const struct tcp2_allocator *allocator,
+                   uint64_t type, size_t size, void *obj)) {
+  tcp2_trivial_allocator_app_operations.alloc = alloc;
+  tcp2_trivial_allocator_app_operations.free = free;
+}
+
+void tcp2_clear_trivial_allocator_app_operations(void) {
+  tcp2_trivial_allocator_app_operations.alloc = NULL;
+  tcp2_trivial_allocator_app_operations.free = NULL;
+}
+
+
+
+/*
  * A trivial allocator implementation that simply uses system malloc and and
  * free.
  */
@@ -210,6 +237,12 @@ void tcp2_allocator_free(const struct tcp2_allocator *allocator,
  */
 static void *tcp2_trivial_alloc(const struct tcp2_allocator *allocator,
                                 uint64_t type, size_t size) {
+  if ((tcp2_trivial_allocator_app_operations.alloc != NULL) &&
+      (type == 0) || (type > 1048576)) {
+    return
+      tcp2_trivial_allocator_app_operations.alloc(allocator, type, size);
+  }
+
   void *obj = malloc(size);
   if (!obj)
     return NULL;
@@ -222,6 +255,14 @@ static void *tcp2_trivial_alloc(const struct tcp2_allocator *allocator,
 
 static void tcp2_trivial_free(const struct tcp2_allocator *allocator,
                               unt64_t type, size_t size, void *obj) {
+  if ((tcp2_trivial_allocator_app_operations.alloc != NULL) &&
+      (type == 0) || (type > 1048576)) {
+    tcp2_trivial_allocator_app_operations.free(
+      allocator, type, size, obj);
+
+    return;
+  }
+
   if (type != 0)
     memset(obj, 0, size);
 
@@ -285,32 +326,22 @@ static void app_modified_free(const struct tcp2_allocator *allocator,
   return tcp2_trivial_alloc(allocator, type, size);
 }
 
+
+
 /*
- * The global operations structure to hold references to modified alloc and
+ * Now use the tcp2 trivial allocator interfaces to set the modified alloc and
  * free.
  */
-static struct tcp2_allocator_operations app_modified_allocator_operations = {
-  .alloc = app_modified_alloc,
-  .free = app_modified_free,
-};
+int main(int argc, char** argc) {
+  tcp2_set_trivial_allocator_app_operations(
+    &app_modified_alloc, &app_modified_free);
 
-static struct tcp2_allocator app_modified_allocator = {
-  .operations = &app_modified_allocator_operations,
-};
+  int retval = app_run();
 
+  tcp2_clear_trivial_allocator_app_operations();
 
-
-/*
- * Get the built in modified allocator.
- *
- * Using this function, the allocator can be supplied as a parameter to other
- * functions.
- */
-const struct tcp2_allocator *app_get_modified_allocator(void) {
-  return &app_modified_allocator;
+  return retval;
 }
-
-
 
 
 
@@ -424,4 +455,22 @@ void app_destroy_custom_allocator(
  * Next is a demonstration of how an allocator may be provided to tcp2 at
  * runtime.
  */
+void app_on_thread_start() {
+#ifdef USE_TRIVIAL
+  struct tcp2_thread_context *tcp2_thread_context =
+    tcp2_create_thread_context(tcp2_system_context,
+                               tcp2_get_trivial_allocator());
+#else if USE_MODIFIED
+  struct tcp2_thread_context *tcp2_thread_context =
+    tcp2_create_thread_context(tcp2_system_context,
+                               app_get_modified_allocator());
+#else
+  struct tcp2_thread_context *tcp2_thread_context =
+    tcp2_create_thread_context(tcp2_system_context,
+                               app_create_custom_allocator());
+#endif
 
+  app_store_tcp2_thread_context(tcp2_thread_context);
+
+  app_execute_thread_loop();
+}
